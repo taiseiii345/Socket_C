@@ -16,4 +16,6 @@ int main(){
             perror("popen");
             exit(1);
         }
+    pclose(fp);
+    return 0;
 }

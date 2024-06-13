@@ -84,6 +84,16 @@ void *recv_data(void *arg) {
     return NULL;
 }
 
+void *ringtone(void *arg){
+    FILE *fp;
+    char *cmdline = "play ../data/Ringtone/call.mp3";
+    if((fp = popen(cmdline, "w")) == NULL){
+        perror("popen");
+        exit(1);
+    }
+}
+
+
 int main(int argc, char *argv[]){
     // サーバー側
     if (argc == 2) {
@@ -114,6 +124,20 @@ int main(int argc, char *argv[]){
             exit(1);
         }
         close(ss);
+
+        /*　ここで音声を流す 
+        　　 流す関数とyes/noのフラグを受けとるものを並列 */
+
+        // コマンドラインによる音声の再生
+        FILE *fp;
+        char *cmdline = "play ../data/Ringtone/call.mp3 ";
+        if((fp = popen(cmdline, "w")) == NULL){
+            perror("popen");
+            exit(1);
+        }
+
+        // 入力待ち　電話をとるかとらないか
+        char buf[1];
 
         // 並列処理
         pthread_t send_thread, recv_thread;

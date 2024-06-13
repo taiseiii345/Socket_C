@@ -8,8 +8,37 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <termios.h>
+#include <fcntl.h>
 
 #define BUFFER_SIZE 256
+#define max_call 3
+
+int kbhit(void)
+{
+	struct termios oldt, newt;
+	int ch;
+	int oldf;
+
+	tcgetattr(STDIN_FILENO, &oldt);
+	newt = oldt;
+	newt.c_lflag &= ~(ICANON | ECHO);
+	tcsetattr(STDIN_FILENO, TCSANOW, &newt);
+	oldf = fcntl(STDIN_FILENO, F_GETFL, 0);
+	fcntl(STDIN_FILENO, F_SETFL, oldf | O_NONBLOCK);
+
+	ch = getchar();
+
+	tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
+	fcntl(STDIN_FILENO, F_SETFL, oldf);
+
+	if (ch != EOF) {
+		ungetc(ch, stdin);
+		return 1;
+	}
+
+	return 0;
+}
 
 void *send_data_serv(void *arg) {
     // 通信ができてから音声を送信
@@ -84,16 +113,6 @@ void *recv_data(void *arg) {
     return NULL;
 }
 
-void *ringtone(void *arg){
-    FILE *fp;
-    char *cmdline = "play ../data/Ringtone/call.mp3";
-    if((fp = popen(cmdline, "w")) == NULL){
-        perror("popen");
-        exit(1);
-    }
-}
-
-
 int main(int argc, char *argv[]){
     // サーバー側
     if (argc == 2) {
@@ -128,16 +147,27 @@ int main(int argc, char *argv[]){
         /*　ここで音声を流す 
         　　 流す関数とyes/noのフラグを受けとるものを並列 */
 
-        // コマンドラインによる音声の再生
-        FILE *fp;
-        char *cmdline = "play ../data/Ringtone/call.mp3 ";
-        if((fp = popen(cmdline, "w")) == NULL){
-            perror("popen");
-            exit(1);
+        int counter = 0;
+        // 0なら電話する、1なら電話しない
+        int flag = 0
+
+        while(!kbhit() && counter < max_call){
+            FILE *fp;
+            char *cmdline = "play ../data/Ringtone/call.mp3 ";
+            if((fp = popen(cmdline, "w")) == NULL){
+                perror("popen");
+                exit(1);
+            }
+            ++counter;
+            pclose(fp);
         }
 
-        // 入力待ち　電話をとるかとらないか
-        char buf[1];
+        if (counter == max_call){
+            flag = 1;
+        }
+
+        // フラグをクライアントに送信
+        int ifconnect = send(s, flag, 1, 0);
 
         // 並列処理
         pthread_t send_thread, recv_thread;
@@ -176,6 +206,27 @@ int main(int argc, char *argv[]){
             perror("connect");
             exit(1);
         }
+
+        // ここから音楽を流す
+        int counter = 0;
+
+        while(!kbhit() && counter < max_call){
+            FILE *fp;
+            char *cmdline = "play ../data/Ringtone/call.mp3 ";
+            if((fp = popen(cmdline, "w")) == NULL){
+                perror("popen");
+                exit(1);
+            }
+            ++counter;
+            pclose(fp);
+        }
+
+        if (counter == max_call){
+            return 0;
+        }
+
+        printf("success\n");
+        return 0;
 
         //並列処理
         pthread_t send_thread, recv_thread;

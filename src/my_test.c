@@ -47,7 +47,6 @@ int kbhit(void)
 }
 
 int counter = 0;
-
 // 0なら電話する、1なら電話しない
 int flag = 0
 

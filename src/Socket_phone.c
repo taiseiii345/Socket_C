@@ -73,6 +73,13 @@ void *send_data_serv(void *arg) {
 }
 
 void *send_data_client(void *arg) {
+    FILE *fp;
+    char *cmdline = "rec -t raw -b 16 -c 1 -e s -r 44100 -";
+    if((fp = popen(cmdline, "r")) == NULL){
+        perror("popen");
+        exit(1);
+    }
+
     int s = *(int *)arg;
     char data[BUFFER_SIZE];
     while (1) {
@@ -94,6 +101,13 @@ void *send_data_client(void *arg) {
 }
 
 void *recv_data(void *arg) {
+    FILE *fp;
+    char *cmdline = "play -t raw -b 16 -c 1 -e s -r 44100 -";
+    if((fp = popen(cmdline, "r")) == NULL){
+        perror("popen");
+        exit(1);
+    }
+    
     int s = *(int *)arg;
     char data[BUFFER_SIZE];
     while (1) {
@@ -149,11 +163,18 @@ int main(int argc, char *argv[]){
 
         int counter = 0;
         // 0なら電話する、1なら電話しない
-        int flag = 0
+        int flag = 0;
+
+        FILE *fp;
+            char *cmdline = "play ../data/Ringtone/call.mp3";
+            if((fp = popen(cmdline, "w")) == NULL){
+                perror("popen");
+                exit(1);
+            }
 
         while(!kbhit() && counter < max_call){
             FILE *fp;
-            char *cmdline = "play ../data/Ringtone/call.mp3 ";
+            char *cmdline = "play ../data/Ringtone/call.mp3";
             if((fp = popen(cmdline, "w")) == NULL){
                 perror("popen");
                 exit(1);
@@ -167,7 +188,7 @@ int main(int argc, char *argv[]){
         }
 
         // フラグをクライアントに送信
-        int ifconnect = send(s, flag, 1, 0);
+        int ifconnect = send(s, &flag, 1, 0);
 
         // 並列処理
         pthread_t send_thread, recv_thread;

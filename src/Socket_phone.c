@@ -153,11 +153,12 @@ int main(int argc, char *argv[]){
         }
 
         if (counter == max_call){
-            return 0
+            return 0;
         }
 
         else{
-            int ifconnect = send(s, 's', sizeof(char), 0);
+            char success = 's'
+            int ifconnect = send(s, &success, sizeof(char), 0);
         }
 
         // 並列処理

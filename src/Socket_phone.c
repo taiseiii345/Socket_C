@@ -133,8 +133,6 @@ int main(int argc, char *argv[]){
         　　 流す関数とyes/noのフラグを受けとるものを並列 */
 
         int counter = 0;
-        // 0なら電話する、1なら電話しない
-        int flag = 0;
 
         FILE *fp;
             char *cmdline = "play ../data/Ringtone/call.mp3";
@@ -155,11 +153,12 @@ int main(int argc, char *argv[]){
         }
 
         if (counter == max_call){
-            flag = 1;
+            return 0
         }
 
-        // フラグをクライアントに送信
-        int ifconnect = send(s, &flag, 1, 0);
+        else{
+            int ifconnect = send(s, 's', sizeof(char), 0);
+        }
 
         // 並列処理
         pthread_t send_thread, recv_thread;
@@ -202,7 +201,10 @@ int main(int argc, char *argv[]){
         // ここから音楽を流す
         int counter = 0;
 
-        while(!kbhit() && counter < max_call){
+        while(counter < max_call){
+            if (!kbhit()){
+                break;
+            }
             FILE *fp;
             char *cmdline = "play ../data/Ringtone/call.mp3 ";
             if((fp = popen(cmdline, "w")) == NULL){

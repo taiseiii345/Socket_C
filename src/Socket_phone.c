@@ -40,30 +40,28 @@ int kbhit(void)
 	return 0;
 }
 
-void *send_data_serv(void *arg) {
-    // 通信ができてから音声を送信
-    FILE *fp;
+void *send_data(void *arg) {
     char *cmdline = "rec -t raw -b 16 -c 1 -e s -r 44100 -";
-    if((fp = popen(cmdline, "r")) == NULL){
-        perror("popen");
-        exit(1);
+    FILE *fp = popen(cmdline, "r");
+    if (fp == NULL) {
+        perror ("popen send failed");
+        exit(EXIT_FAILURE);
     }
 
     int s = *(int *)arg;
-    // 出力データのバッファ
-    // 標準入力から読み込み，データを送信
-    char buf[1];
+
+    short data[1];
     while(1){
-        int n = fread(buf, sizeof(char), sizeof(char), fp);
+        int n = fread(data, sizeof(short), 1, fp);
         if(n == -1){
             perror("read");
             exit(1);
-        }else if(n == 0){
+        }
+        if(n == 0){
             break;
         }
-
-        int m = send(s, buf, n, 0);
-        if(m == -1){
+        int nn = send(s, data, sizeof(data), 0);
+        if(nn < 0){
             perror("send");
             exit(1);
         }
@@ -72,58 +70,31 @@ void *send_data_serv(void *arg) {
     return NULL;
 }
 
-void *send_data_client(void *arg) {
-    FILE *fp;
-    char *cmdline = "rec -t raw -b 16 -c 1 -e s -r 44100 -";
-    if((fp = popen(cmdline, "r")) == NULL){
-        perror("popen");
-        exit(1);
-    }
-
-    int s = *(int *)arg;
-    char data[BUFFER_SIZE];
-    while (1) {
-        int n = read(0, data, BUFFER_SIZE);
-        if (n == -1) {
-            perror("read");
-            exit(1);
-        } else if (n == 0) {
-            break;
-        }
-        int m = send(s, data, n, 0);
-        if (m == -1) {
-            perror("send");
-            exit(1);
-        }
-    }
-    shutdown(s, SHUT_WR);
-    return NULL;
-}
-
 void *recv_data(void *arg) {
-    FILE *fp;
     char *cmdline = "play -t raw -b 16 -c 1 -e s -r 44100 -";
-    if((fp = popen(cmdline, "r")) == NULL){
-        perror("popen");
-        exit(1);
+    FILE *fp = popen(cmdline, "w");
+    if (fp == NULL) {
+        perror ("popen recv failed");
+        exit(EXIT_FAILURE);
     }
-    
+
     int s = *(int *)arg;
-    char data[BUFFER_SIZE];
+    short data[1];
     while (1) {
-        int n = recv(s, data, BUFFER_SIZE, 0);
+        int n = recv(s, data, sizeof(data), 0);
         if (n == -1) {
             perror("recv");
             exit(1);
         } else if (n == 0) {
             break;
         }
-        int m = write(1, data, n);
+        int m = fwrite(data, sizeof(short), 1, fp);
         if (m == -1) {
             perror("write");
             exit(1);
         }
     }
+    pclose(fp);
     return NULL;
 }
 
@@ -193,7 +164,7 @@ int main(int argc, char *argv[]){
         // 並列処理
         pthread_t send_thread, recv_thread;
 
-        if (pthread_create(&send_thread, NULL, send_data_serv, &s) != 0) {
+        if (pthread_create(&send_thread, NULL, send_data, &s) != 0) {
             perror("pthread_create");
             exit(1);
         }
@@ -246,13 +217,10 @@ int main(int argc, char *argv[]){
             return 0;
         }
 
-        printf("success\n");
-        return 0;
-
         //並列処理
         pthread_t send_thread, recv_thread;
 
-        if (pthread_create(&send_thread, NULL, send_data_client, &s) != 0) {
+        if (pthread_create(&send_thread, NULL, send_data, &s) != 0) {
             perror("pthread_create");
             exit(1);
         }

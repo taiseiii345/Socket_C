@@ -14,6 +14,8 @@
 #define BUFFER_SIZE 256
 #define max_call 3
 
+int connected = 0;
+
 int kbhit(void)
 {
 	struct termios oldt, newt;
@@ -98,6 +100,37 @@ void *recv_data(void *arg) {
     return NULL;
 }
 
+void *ring(){
+    int counter = 0;
+    while(counter < max_call){
+        if(connected == 1){
+            break;
+        }
+        FILE *fp;
+        char *cmdline = "play ../data/Ringtone/call.mp3";
+        if((fp = popen(cmdline, "w")) == NULL){
+            perror("popen");
+            exit(1);
+        }
+        ++counter;
+        pclose(fp);
+    }
+
+    pthread_exit(NULL);
+
+}
+
+void *call(void *arg){
+    int s = *(int *)arg;
+    char success[1];
+    int n = recv(s, success, sizeof(char), 0);
+    if(*success == 's'){
+        connected = 1;
+    }
+    printf("%c\n", *success);
+    pthread_exit(NULL);
+}
+
 int main(int argc, char *argv[]){
     // サーバー側
     if (argc == 2) {
@@ -153,11 +186,13 @@ int main(int argc, char *argv[]){
         }
 
         if (counter == max_call){
+            char fail = 'f';
+            int ifconnect0 = send(s, &fail, sizeof(char), 0);
             return 0;
         }
 
         else{
-            char success = 's'
+            char success = 's';
             int ifconnect = send(s, &success, sizeof(char), 0);
         }
 
@@ -202,25 +237,29 @@ int main(int argc, char *argv[]){
         // ここから音楽を流す
         int counter = 0;
 
-        while(counter < max_call){
-            if (!kbhit()){
-                break;
-            }
-            FILE *fp;
-            char *cmdline = "play ../data/Ringtone/call.mp3 ";
-            if((fp = popen(cmdline, "w")) == NULL){
-                perror("popen");
-                exit(1);
-            }
-            ++counter;
-            pclose(fp);
+        // 並列処理
+        pthread_t ring_thread, call_thread;
+
+        sleep(1);
+
+        if (pthread_create(&ring_thread, NULL, ring, &s) != 0) {
+            perror("pthread_create");
+            exit(1);
         }
 
-        if (counter == max_call){
+        if (pthread_create(&call_thread, NULL, call, &s) != 0) {
+            perror("pthread_create");
+            exit(1);
+        }
+
+        pthread_join(ring_thread, NULL);
+        pthread_join(call_thread, NULL);
+
+        if(connected == 0){
             return 0;
-        }
+        } 
 
-        //並列処理
+        // 並列処理
         pthread_t send_thread, recv_thread;
 
         if (pthread_create(&send_thread, NULL, send_data, &s) != 0) {

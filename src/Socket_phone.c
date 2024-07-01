@@ -94,7 +94,8 @@ void *recv_data(void *arg) {
             break;
         }
         if(mute == 1){
-            short garbage[1] = 0;
+            short garbage[1];
+            garbage[0] = 0;
             int m = fwrite(garbage, sizeof(short), 1, fp);
             if (m == -1) {
                 perror("write");
@@ -138,7 +139,7 @@ void *getchar_self(void *arg){
     int s = *(int *)arg;
     char data[1];
     while(1){
-        data[0] = getchar()
+        data[0] = getchar();
         switch(data[0]){
             case 'c':
                 connected = 1;
@@ -220,7 +221,7 @@ int main(int argc, char *argv[]){
         }
 
         // 並列処理
-        pthread_t send_thread, recv_thread, getchar_self_thread;
+        pthread_t send_thread, recv_thread;
 
         if (pthread_create(&send_thread, NULL, send_data, &s) != 0) {
             perror("pthread_create");
@@ -286,7 +287,7 @@ int main(int argc, char *argv[]){
         } 
 
         // 並列処理
-         pthread_t send_thread, recv_thread, getchar_opponent;
+         pthread_t send_thread, recv_thread;
 
         if (pthread_create(&send_thread, NULL, send_data, &s) != 0) {
             perror("pthread_create");

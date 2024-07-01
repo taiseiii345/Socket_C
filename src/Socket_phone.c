@@ -14,7 +14,10 @@
 #define BUFFER_SIZE 256
 #define max_call 3
 
+// 通話の開始
 int connected = 0;
+// ミュートの開始
+int mute = 0;
 
 int kbhit(void)
 {
@@ -83,6 +86,9 @@ void *recv_data(void *arg) {
     int s = *(int *)arg;
     short data[1];
     while (1) {
+        if(mute == 1){
+            break;
+        }
         int n = recv(s, data, sizeof(data), 0);
         if (n == -1) {
             perror("recv");
@@ -120,21 +126,40 @@ void *ring(){
 
 }
 
-void *call(void *arg){
-    int s = *(int *)arg;
-    char success[1];
-    int n = recv(s, success, sizeof(char), 0);
-    if(*success == 's'){
-        connected = 1;
+// cでserver側が通話開始
+void *getchar_self(void *arg){
+    char data[1];
+    while(1){
+        data[0] = getchar()
+        switch(data[0]){
+            case 'c':
+                connected = 1;
+                break;
+        }
     }
-    printf("%c\n", *success);
-    pthread_exit(NULL);
+}
+
+// cでclient側が通話開始、mでお互いに相手をミュート
+void *getchar_opponent(void *arg){
+    int s = *(int *)arg;
+    char data[1];
+    while (1) {
+        int n = recv(s, data, sizeof(data), 0);
+        switch(data[0]){
+            case 'c':
+                connected = 1;
+                break;
+            case 'm':
+                mute = 1;
+                break;
+        }
+    }
 }
 
 int main(int argc, char *argv[]){
     // サーバー側
     if (argc == 2) {
-        // ソケットの作成．返り値はファイルディスクリプタ
+        // ソケットの作成
         int ss = socket(PF_INET, SOCK_STREAM, 0);
         if(ss == -1){
             perror("socket");
@@ -145,14 +170,16 @@ int main(int argc, char *argv[]){
         addr.sin_port = htons(atoi(argv[1]));  //ポート番号
         addr.sin_addr.s_addr = INADDR_ANY; //どのIPアドレスも受付
 
+        // どのポートで待ち受けるか
         int ret = bind(ss, (struct sockaddr *)&addr, sizeof(addr));
         if(ret == -1){
             perror("bind");
             exit(1);
         }
-
+        // 待ち受け可能宣言
         listen(ss, 10);
 
+        // クライアントがconnectするまで待つ
         struct sockaddr_in client_addr;
         socklen_t len = sizeof(struct sockaddr_in);
         int s = accept(ss, (struct sockaddr *)&client_addr, &len);
@@ -162,38 +189,25 @@ int main(int argc, char *argv[]){
         }
         close(ss);
 
-        /*　ここで音声を流す 
-        　　 流す関数とyes/noのフラグを受けとるものを並列 */
+        // 着信音
 
-        int counter = 0;
+        pthread_t getchar_self_thread, ring_thread;
 
-        FILE *fp;
-            char *cmdline = "play ../data/Ringtone/call.mp3";
-            if((fp = popen(cmdline, "w")) == NULL){
-                perror("popen");
-                exit(1);
-            }
-
-        while(!kbhit() && counter < max_call){
-            FILE *fp;
-            char *cmdline = "play ../data/Ringtone/call.mp3";
-            if((fp = popen(cmdline, "w")) == NULL){
-                perror("popen");
-                exit(1);
-            }
-            ++counter;
-            pclose(fp);
+        if (pthread_create(&getchar_self_thread, NULL, getchar_self, &s) != 0){
+            perror("pthread_create");
+            exit(1);
         }
 
-        if (counter == max_call){
-            char fail = 'f';
-            int ifconnect0 = send(s, &fail, sizeof(char), 0);
+        if (pthread_create(&ring_thread, NULL, ring, &s) != 0){
+            perror("pthread_create");
+            exit(1);
+        }
+
+        pthread_join(getchar_self_thread, NULL);
+        pthread_join(ring_thread, NULL);
+
+        if (connected == 0){
             return 0;
-        }
-
-        else{
-            char success = 's';
-            int ifconnect = send(s, &success, sizeof(char), 0);
         }
 
         // 並列処理
@@ -214,7 +228,6 @@ int main(int argc, char *argv[]){
 
         close(s);
     }
-
     else if(argc == 3){
         // クライアント側
         int s = socket(PF_INET, SOCK_STREAM, 0);

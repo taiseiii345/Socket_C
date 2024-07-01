@@ -14,12 +14,14 @@
 #define BUFFER_SIZE 256
 #define max_call 3
 
-// 通話の開始
+// 通話の開始フラグ
 int connected = 0;
-// ミュートの開始
-int mute = 0;
 
-void *send_data(void *arg) {
+// ミュートフラグ
+int mute_serv = 0;
+int mute_client = 0;
+
+void *send_data_serv(void *arg) {
     char *cmdline = "rec -t raw -b 16 -c 1 -e s -r 44100 -";
     FILE *fp = popen(cmdline, "r");
     if (fp == NULL) {
@@ -39,6 +41,12 @@ void *send_data(void *arg) {
         if(n == 0){
             break;
         }
+
+        // ミュートフラグが立っている場合は送るデータを0にする
+        if (mute_serv) {
+            data[0] = (short)0;
+        }
+
         int nn = send(s, data, sizeof(data), 0);
         if(nn < 0){
             perror("send");
@@ -49,7 +57,43 @@ void *send_data(void *arg) {
     return NULL;
 }
 
-void *recv_data(void *arg) {
+void *send_data_client(void *arg) {
+    char *cmdline = "rec -t raw -b 16 -c 1 -e s -r 44100 -";
+    FILE *fp = popen(cmdline, "r");
+    if (fp == NULL) {
+        perror ("popen send failed");
+        exit(EXIT_FAILURE);
+    }
+
+    int s = *(int *)arg;
+
+    short data[1];
+    while(1){
+        int n = fread(data, sizeof(short), 1, fp);
+        if(n == -1){
+            perror("read");
+            exit(1);
+        }
+        if(n == 0){
+            break;
+        }
+
+        // ミュートフラグが立っている場合は送るデータを0にする
+        if (mute_client) {
+            data[0] = (short)0;
+        }
+
+        int nn = send(s, data, sizeof(data), 0);
+        if(nn < 0){
+            perror("send");
+            exit(1);
+        }
+    }
+    pclose(fp);
+    return NULL;
+}
+
+void *recv_data_serv(void *arg) {
     char *cmdline = "play -t raw -b 16 -c 1 -e s -r 44100 -";
     FILE *fp = popen(cmdline, "w");
     if (fp == NULL) {
@@ -67,23 +111,44 @@ void *recv_data(void *arg) {
         } else if (n == 0) {
             break;
         }
-        if(mute == 1){
-            short garbage[1];
-            garbage[0] = 0;
-            int m = fwrite(garbage, sizeof(short), 1, fp);
-            if (m == -1) {
-                perror("write");
-                exit(1);
-            }
-        }
-        else{
-            int m = fwrite(data, sizeof(short), 1, fp);
-            if (m == -1) {
-                perror("write");
-                exit(1);
-            }
+
+        int m = fwrite(data, sizeof(short), 1, fp);
+        if (m == -1) {
+            perror("write");
+            exit(1);
         }
     }
+
+    pclose(fp);
+    return NULL;
+}
+
+void *recv_data_client(void *arg) {
+    char *cmdline = "play -t raw -b 16 -c 1 -e s -r 44100 -";
+    FILE *fp = popen(cmdline, "w");
+    if (fp == NULL) {
+        perror ("popen recv failed");
+        exit(EXIT_FAILURE);
+    }
+
+    int s = *(int *)arg;
+    short data[1];
+    while (1) {
+        int n = recv(s, data, sizeof(data), 0);
+        if (n == -1) {
+            perror("recv");
+            exit(1);
+        } else if (n == 0) {
+            break;
+        }
+
+        int m = fwrite(data, sizeof(short), 1, fp);
+        if (m == -1) {
+            perror("write");
+            exit(1);
+        }
+    }
+
     pclose(fp);
     return NULL;
 }
@@ -95,7 +160,7 @@ void *ring(){
             break;
         }
         FILE *fp;
-        char *cmdline = "play ../data/Ringtone/call.mp3";
+        char *cmdline = "play ../data/Ringtone/call.mp3 > /dev/null 2>&1";
         if((fp = popen(cmdline, "w")) == NULL){
             perror("popen");
             exit(1);
@@ -110,7 +175,8 @@ void *ring(){
 
 // getcharはEOF(Enter)押さないと発動しない
 // cでserver側が通話開始、mでお互いに相手をミュート
-void *getchar_self(void *arg){
+// サーバー側からクライアント側へ常に文字を送る
+void *getchar_serv_send(void *arg){
     int s = *(int *)arg;
     char data[1];
     while(1){
@@ -125,16 +191,61 @@ void *getchar_self(void *arg){
                     perror("send");
                     exit(1);
                 }
-                // break;
                 pthread_exit(NULL);
+                // breakだとプログラムが終了してしまう
             case 'm':
-                mute = (mute + 1) % 2;
+                mute_serv = (mute_serv + 1) % 2;
+                // TODO: printデバッグを消す
+                printf("mute: %d\n", mute_serv);
         }
     }
 }
 
-// cでclient側が通話開始
-void *getchar_opponent(void *arg){
+// サーバー側でクライアント側から常に文字を受け取る
+void *getchar_serv_recv(void *arg){
+    int s = *(int *)arg;
+    char data[1];
+    while (1) {
+        int n = recv(s, data, sizeof(data), 0);
+        if (n == -1) {
+            perror("recv");
+            exit(1);
+        }
+        switch(data[0]){
+            // サーバー側がcを受け取とったら通話終了
+            case 'c':
+                connected = 0;
+                break;
+        }
+    }
+}
+
+// クライアント側からサーバー側へ常に文字を送る
+void *getchar_client_send(void *arg){
+    int s = *(int *)arg;
+    char data[1];
+    while(1){
+        data[0] = getchar();
+        // printf("%c\n",data[0]);
+        switch(data[0]){
+            case 'c':
+                connected = 1;
+                // 送る処理
+                int send_char_num = send(s, data, sizeof(char), 0);
+                if(send_char_num < 0){
+                    perror("send");
+                    exit(1);
+                }
+                pthread_exit(NULL);
+            case 'm':
+                mute_client = (mute_client + 1) % 2;
+                printf("mute: %d\n", mute_client);
+        }
+    }
+}
+
+// クライアント側でサーバー側から常に文字を受け取る
+void *getchar_client_recv(void *arg){
     int s = *(int *)arg;
     char data[1];
     while (1) {
@@ -187,9 +298,9 @@ int main(int argc, char *argv[]){
 
         // 着信音
 
-        pthread_t getchar_self_thread, ring_thread;
+        pthread_t getchar_serv_send_thread, ring_thread;
 
-        if (pthread_create(&getchar_self_thread, NULL, getchar_self, &s) != 0){
+        if (pthread_create(&getchar_serv_send_thread, NULL, getchar_serv_send, &s) != 0){
             perror("pthread_create");
             exit(1);
         }
@@ -199,7 +310,7 @@ int main(int argc, char *argv[]){
             exit(1);
         }
 
-        pthread_join(getchar_self_thread, NULL);
+        pthread_join(getchar_serv_send_thread, NULL);
         pthread_join(ring_thread, NULL);
 
         if (connected == 0){
@@ -207,26 +318,32 @@ int main(int argc, char *argv[]){
         }
 
         // 並列処理
-        pthread_t send_thread, recv_thread;
+        pthread_t send_thread, recv_thread, getchar_serv_recv_thread;
 
-        if (pthread_create(&send_thread, NULL, send_data, &s) != 0) {
+        if (pthread_create(&send_thread, NULL, send_data_serv, &s) != 0) {
             perror("pthread_create");
             exit(1);
         }
 
-        if (pthread_create(&recv_thread, NULL, recv_data, &s) != 0) {
+        if (pthread_create(&recv_thread, NULL, recv_data_serv, &s) != 0) {
             perror("pthread_create");
             exit(1);
         }
 
-        if (pthread_create(&getchar_self_thread, NULL, getchar_self, &s) != 0){
+        if (pthread_create(&getchar_serv_send_thread, NULL, getchar_serv_send, &s) != 0){
+            perror("pthread_create");
+            exit(1);
+        }
+
+        if (pthread_create(&getchar_serv_recv_thread, NULL, getchar_serv_recv, &s) != 0){
             perror("pthread_create");
             exit(1);
         }
 
         pthread_join(send_thread, NULL);
         pthread_join(recv_thread, NULL);
-        pthread_join(getchar_self_thread, NULL);
+        pthread_join(getchar_serv_send_thread, NULL);
+        pthread_join(getchar_serv_recv_thread, NULL);
 
         close(s);
     }
@@ -250,7 +367,7 @@ int main(int argc, char *argv[]){
         }
 
         // 並列処理
-        pthread_t ring_thread, getchar_opponent_thread;
+        pthread_t ring_thread, getchar_client_recv_thread;
 
         // タイミング調整
         sleep(1);
@@ -260,39 +377,45 @@ int main(int argc, char *argv[]){
             exit(1);
         }
 
-        if (pthread_create(&getchar_opponent_thread, NULL, getchar_opponent, &s) != 0) {
+        if (pthread_create(&getchar_client_recv_thread, NULL, getchar_client_recv, &s) != 0) {
             perror("pthread_create");
             exit(1);
         }
 
         pthread_join(ring_thread, NULL);
-        pthread_join(getchar_opponent_thread, NULL);
+        pthread_join(getchar_client_recv_thread, NULL);
 
         if(connected == 0){
             return 0;
         } 
 
         // 並列処理
-         pthread_t send_thread, recv_thread;
+         pthread_t send_thread, recv_thread, getchar_client_send_thread;
 
-        if (pthread_create(&send_thread, NULL, send_data, &s) != 0) {
+        if (pthread_create(&send_thread, NULL, send_data_client, &s) != 0) {
             perror("pthread_create");
             exit(1);
         }
 
-        if (pthread_create(&recv_thread, NULL, recv_data, &s) != 0) {
+        if (pthread_create(&recv_thread, NULL, recv_data_client, &s) != 0) {
             perror("pthread_create");
             exit(1);
         }
 
-        if (pthread_create(&getchar_opponent_thread, NULL, getchar_opponent, &s) != 0){
+        if (pthread_create(&getchar_client_recv_thread, NULL, getchar_client_recv, &s) != 0){
+            perror("pthread_create");
+            exit(1);
+        }
+
+        if (pthread_create(&getchar_client_send_thread, NULL, getchar_client_send, &s) != 0){
             perror("pthread_create");
             exit(1);
         }
 
         pthread_join(send_thread, NULL);
         pthread_join(recv_thread, NULL);
-        pthread_join(getchar_opponent_thread, NULL);
+        pthread_join(getchar_client_send_thread, NULL);
+        pthread_join(getchar_client_recv_thread, NULL);
 
         close(s);
     }

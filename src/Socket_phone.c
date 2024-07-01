@@ -19,32 +19,6 @@ int connected = 0;
 // ミュートの開始
 int mute = 0;
 
-int kbhit(void)
-{
-	struct termios oldt, newt;
-	int ch;
-	int oldf;
-
-	tcgetattr(STDIN_FILENO, &oldt);
-	newt = oldt;
-	newt.c_lflag &= ~(ICANON | ECHO);
-	tcsetattr(STDIN_FILENO, TCSANOW, &newt);
-	oldf = fcntl(STDIN_FILENO, F_GETFL, 0);
-	fcntl(STDIN_FILENO, F_SETFL, oldf | O_NONBLOCK);
-
-	ch = getchar();
-
-	tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
-	fcntl(STDIN_FILENO, F_SETFL, oldf);
-
-	if (ch != EOF) {
-		ungetc(ch, stdin);
-		return 1;
-	}
-
-	return 0;
-}
-
 void *send_data(void *arg) {
     char *cmdline = "rec -t raw -b 16 -c 1 -e s -r 44100 -";
     FILE *fp = popen(cmdline, "r");
@@ -134,18 +108,26 @@ void *ring(){
 
 }
 
+// getcharはEOF(Enter)押さないと発動しない
+
 // cでserver側が通話開始、mでお互いに相手をミュート
 void *getchar_self(void *arg){
     int s = *(int *)arg;
     char data[1];
     while(1){
         data[0] = getchar();
+        // printf("%c\n",data[0]);
         switch(data[0]){
             case 'c':
                 connected = 1;
                 // 送る処理
                 int send_char_num = send(s, data, sizeof(char), 0);
-                break;
+                if(send_char_num < 0){
+                    perror("send");
+                    exit(1);
+                }
+                // break;
+                pthread_exit(NULL);
             case 'm':
                 mute = (mute + 1) % 2;
         }
@@ -158,10 +140,15 @@ void *getchar_opponent(void *arg){
     char data[1];
     while (1) {
         int n = recv(s, data, sizeof(data), 0);
+        if (n == -1) {
+            perror("recv");
+            exit(1);
+        }
         switch(data[0]){
             case 'c':
                 connected = 1;
-                break;
+                // break;
+                pthread_exit(NULL);
         }
     }
 }

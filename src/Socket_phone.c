@@ -109,7 +109,6 @@ void *ring(){
 }
 
 // getcharはEOF(Enter)押さないと発動しない
-
 // cでserver側が通話開始、mでお互いに相手をミュート
 void *getchar_self(void *arg){
     int s = *(int *)arg;

@@ -318,14 +318,14 @@ int main(int argc, char *argv[]){
         }
 
         // 並列処理
-        pthread_t send_thread, recv_thread, getchar_serv_recv_thread;
+        pthread_t send_serv_thread, recv_serv_thread, getchar_serv_recv_thread;
 
-        if (pthread_create(&send_thread, NULL, send_data_serv, &s) != 0) {
+        if (pthread_create(&send_serv_thread, NULL, send_data_serv, &s) != 0) {
             perror("pthread_create");
             exit(1);
         }
 
-        if (pthread_create(&recv_thread, NULL, recv_data_serv, &s) != 0) {
+        if (pthread_create(&recv_serv_thread, NULL, recv_data_serv, &s) != 0) {
             perror("pthread_create");
             exit(1);
         }
@@ -340,8 +340,8 @@ int main(int argc, char *argv[]){
             exit(1);
         }
 
-        pthread_join(send_thread, NULL);
-        pthread_join(recv_thread, NULL);
+        pthread_join(send_serv_thread, NULL);
+        pthread_join(recv_serv_thread, NULL);
         pthread_join(getchar_serv_send_thread, NULL);
         pthread_join(getchar_serv_recv_thread, NULL);
 

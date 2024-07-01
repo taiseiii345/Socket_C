@@ -86,9 +86,6 @@ void *recv_data(void *arg) {
     int s = *(int *)arg;
     short data[1];
     while (1) {
-        if(mute == 1){
-            break;
-        }
         int n = recv(s, data, sizeof(data), 0);
         if (n == -1) {
             perror("recv");
@@ -96,10 +93,20 @@ void *recv_data(void *arg) {
         } else if (n == 0) {
             break;
         }
-        int m = fwrite(data, sizeof(short), 1, fp);
-        if (m == -1) {
-            perror("write");
-            exit(1);
+        if(mute == 1){
+            short garbage[1] = 0;
+            int m = fwrite(garbage, sizeof(short), 1, fp);
+            if (m == -1) {
+                perror("write");
+                exit(1);
+            }
+        }
+        else{
+            int m = fwrite(data, sizeof(short), 1, fp);
+            if (m == -1) {
+                perror("write");
+                exit(1);
+            }
         }
     }
     pclose(fp);
@@ -126,20 +133,25 @@ void *ring(){
 
 }
 
-// cでserver側が通話開始
+// cでserver側が通話開始、mでお互いに相手をミュート
 void *getchar_self(void *arg){
+    int s = *(int *)arg;
     char data[1];
     while(1){
         data[0] = getchar()
         switch(data[0]){
             case 'c':
                 connected = 1;
+                // 送る処理
+                int send_char_num = send(s, data, sizeof(char), 0);
                 break;
+            case 'm':
+                mute = (mute + 1) % 2;
         }
     }
 }
 
-// cでclient側が通話開始、mでお互いに相手をミュート
+// cでclient側が通話開始
 void *getchar_opponent(void *arg){
     int s = *(int *)arg;
     char data[1];
@@ -148,9 +160,6 @@ void *getchar_opponent(void *arg){
         switch(data[0]){
             case 'c':
                 connected = 1;
-                break;
-            case 'm':
-                mute = 1;
                 break;
         }
     }
@@ -211,7 +220,7 @@ int main(int argc, char *argv[]){
         }
 
         // 並列処理
-        pthread_t send_thread, recv_thread;
+        pthread_t send_thread, recv_thread, getchar_self_thread;
 
         if (pthread_create(&send_thread, NULL, send_data, &s) != 0) {
             perror("pthread_create");
@@ -223,8 +232,14 @@ int main(int argc, char *argv[]){
             exit(1);
         }
 
+        if (pthread_create(&getchar_self_thread, NULL, getchar_self, &s) != 0){
+            perror("pthread_create");
+            exit(1);
+        }
+
         pthread_join(send_thread, NULL);
         pthread_join(recv_thread, NULL);
+        pthread_join(getchar_self_thread, NULL);
 
         close(s);
     }
@@ -247,12 +262,10 @@ int main(int argc, char *argv[]){
             exit(1);
         }
 
-        // ここから音楽を流す
-        int counter = 0;
-
         // 並列処理
-        pthread_t ring_thread, call_thread;
+        pthread_t ring_thread, getchar_opponent_thread;
 
+        // タイミング調整
         sleep(1);
 
         if (pthread_create(&ring_thread, NULL, ring, &s) != 0) {
@@ -260,20 +273,20 @@ int main(int argc, char *argv[]){
             exit(1);
         }
 
-        if (pthread_create(&call_thread, NULL, call, &s) != 0) {
+        if (pthread_create(&getchar_opponent_thread, NULL, getchar_opponent, &s) != 0) {
             perror("pthread_create");
             exit(1);
         }
 
         pthread_join(ring_thread, NULL);
-        pthread_join(call_thread, NULL);
+        pthread_join(getchar_opponent_thread, NULL);
 
         if(connected == 0){
             return 0;
         } 
 
         // 並列処理
-        pthread_t send_thread, recv_thread;
+         pthread_t send_thread, recv_thread, getchar_opponent;
 
         if (pthread_create(&send_thread, NULL, send_data, &s) != 0) {
             perror("pthread_create");
@@ -285,14 +298,21 @@ int main(int argc, char *argv[]){
             exit(1);
         }
 
+        if (pthread_create(&getchar_opponent_thread, NULL, getchar_opponent, &s) != 0){
+            perror("pthread_create");
+            exit(1);
+        }
+
         pthread_join(send_thread, NULL);
         pthread_join(recv_thread, NULL);
+        pthread_join(getchar_opponent_thread, NULL);
 
         close(s);
     }
 
     else{
-        fprintf(stderr, "Usage: %s <Port>\n", argv[0]);
+        fprintf(stderr, "Usage (server): %s <Port>\n", argv[0]);
+        fprintf(stderr, "Usage (client): %s <IP> <Port>\n", argv[0]);
         exit(1);
     }
 

@@ -18,6 +18,8 @@
 int connected = 0;
 // ミュートの開始
 int mute = 0;
+// スピーカーの開始
+int speaker = 0;
 
 void *send_data(void *arg) {
     char *cmdline = "rec -t raw -b 16 -c 1 -e s -r 44100 -";
@@ -38,6 +40,9 @@ void *send_data(void *arg) {
         }
         if(n == 0){
             break;
+        }
+        if(speaker == 1){
+            data[0] *= 2;
         }
         int nn = send(s, data, sizeof(data), 0);
         if(nn < 0){
@@ -129,6 +134,8 @@ void *getchar_self(void *arg){
                 pthread_exit(NULL);
             case 'm':
                 mute = (mute + 1) % 2;
+            case 's':
+                speaker = (speaker + 1) % 2;
         }
     }
 }

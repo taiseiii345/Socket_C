@@ -26,42 +26,10 @@ int connected = 0;
 int mute = 0;
 // スピーカーの開始
 int speaker = 0;
-
 //　ボイスチェンジャー
 int VC = 0;
 
 typedef short sample_t;
-
-void die(char * s) {
-  perror(s); 
-  exit(1);
-}
-
-/* fd から 必ず n バイト読み, bufへ書く.
-   n バイト未満でEOFに達したら, 残りは0で埋める.
-   fd から読み出されたバイト数を返す */
-ssize_t read_n(int fd, ssize_t n, void * buf) {
-  ssize_t re = 0;
-  while (re < n) {
-    ssize_t r = read(fd, buf + re, n - re);
-    if (r == -1) die("read");
-    if (r == 0) break;
-    re += r;
-  }
-  memset(buf + re, 0, n - re);
-  return re;
-}
-
-/* fdへ, bufからnバイト書く */
-ssize_t write_n(int fd, ssize_t n, void * buf) {
-  ssize_t wr = 0;
-  while (wr < n) {
-    ssize_t w = write(fd, buf + wr, n - wr);
-    if (w == -1) die("write");
-    wr += w;
-  }
-  return wr;
-}
 
 /* 標本(整数)を複素数へ変換 */
 void sample_to_complex(sample_t * s, 
@@ -156,11 +124,12 @@ void *send_data(void *arg) {
             short mute_sig[DATA_SIZE];
             // mute_sig[0] = (short)0;
             memset(mute_sig, 0, DATA_SIZE);
-            int m = send(s, mute_sig, sizeof(short), 0);
+            int m = send(s, mute_sig, sizeof(mute_sig), 0);
             if (m == -1) {
                 perror("write");
                 exit(1);
             }
+            continue;
         }
 
         if(VC == 1){
@@ -174,7 +143,7 @@ void *send_data(void *arg) {
                 fft(X, Y, n);
 
                 // FFT_SLIDEだけずらす
-                for(int i = 0; i < n; ++i){
+                for(int i = 0; i < (int)n/2; ++i){
                     Y[i+FFT_SLIDE] = Y[i];
                 }
                 for(int i = 0; i< FFT_SLIDE; ++i){

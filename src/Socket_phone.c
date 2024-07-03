@@ -19,6 +19,7 @@
 #define DATA_SIZE 1024
 #define FFT_SLIDE 3
 #define max_call 3
+#define NOISE_CANCEL_SLIDE 5
 
 // 通話の開始
 int connected = 0;
@@ -109,16 +110,19 @@ void *send_data(void *arg) {
     // short data[1];
     short data[DATA_SIZE];
     while(1){
-        int n = fread(data, sizeof(short), DATA_SIZE, fp);
-        if(n == -1){
+        int nnn = fread(data, sizeof(short), DATA_SIZE, fp);
+        if(nnn == -1){
             perror("read");
             exit(1);
         }
-        if(n == 0){
+        if(nnn == 0){
             break;
         }
         if(speaker == 1){
-            data[0] *= 2;
+            // data[0] *= 2;
+            for(int i = 0; i < DATA_SIZE; ++i){
+                data[i] *= 5;
+            }
         }
         if(mute == 1){
             short mute_sig[DATA_SIZE];
@@ -132,37 +136,43 @@ void *send_data(void *arg) {
             continue;
         }
 
-        if(VC == 1){
-            long n = DATA_SIZE;
-            complex double * X = calloc(sizeof(complex double), n);
-            complex double * Y = calloc(sizeof(complex double), n);
-            /* 複素数の配列に変換 */
-            sample_to_complex(data, X, n);
-            /* FFT -> Y */
-            fft(X, Y, n);
+        long n = DATA_SIZE;
+        complex double * X = calloc(sizeof(complex double), n);
+        complex double * Y = calloc(sizeof(complex double), n);
+        /* 複素数の配列に変換 */
+        sample_to_complex(data, X, n);
+        /* FFT -> Y */
+        fft(X, Y, n);
 
+        if (VC == 1){
             // FFT_SLIDEだけずらす
-            for(int i = (int)n/2 -1 - FFT_SLIDE; i >= 0; --i){
+            for(int i = (int)n/2 - 1 - FFT_SLIDE; i >= 0; --i){
                 Y[i+FFT_SLIDE] = Y[i];
             }
             for(int i = 0; i< FFT_SLIDE; ++i){
                 Y[i] = 0;
             }
-
-            /* IFFT -> Z */
-            ifft(Y, X, n);
-            /* 標本の配列に変換 */
-            complex_to_sample(X, data, n);
-
-            free(X);
-            free(Y);
         }
+
+        // LPFでノイズカット
+        for(int i = 0; i< NOISE_CANCEL_SLIDE; ++i){
+                Y[i] = 0;
+        }
+
+        /* IFFT -> Z */
+        ifft(Y, X, n);
+        /* 標本の配列に変換 */
+        complex_to_sample(X, data, n);
+
+        free(X);
+        free(Y);
 
         int nn = send(s, data, sizeof(data), 0);
         if(nn < 0){
             perror("send");
             exit(1);
         }
+
     }
     pclose(fp);
     return NULL;

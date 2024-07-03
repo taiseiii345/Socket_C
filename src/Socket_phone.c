@@ -14,6 +14,8 @@
 #include <complex.h>
 #include <math.h>
 #include <string.h>
+#include <sys/select.h>
+#include <sys/time.h>
 
 #define BUFFER_SIZE 256
 #define DATA_SIZE 1024
@@ -29,6 +31,8 @@ int mute = 0;
 int silence = 0;
 //　ボイスチェンジャー
 int VC = 0;
+// ringスレッドが終了したかどうか
+int ring_finished = 0;
 
 typedef short sample_t;
 
@@ -231,6 +235,8 @@ void *ring(){
         pclose(fp);
     }
 
+    ring_finished = 1;
+
     pthread_exit(NULL);
 }
 
@@ -318,11 +324,61 @@ void *getchar_self(void *arg){
     }
 }
 
+// リングスレッドが終了したら自分も終了
+// タイムアウトとselectを用いて、入力があった時のみgetcharに移る
+void *get_call(void *arg){
+    int s = *(int *)arg;
+    char data[1];
+    fd_set readfds;
+    struct timeval time;
+    // ringスレッドが終わっていない間
+    while(!ring_finished){
+        FD_ZERO(&readfds);
+        FD_SET(STDIN_FILENO, &readfds);
+
+        time.tv_sec = 0;
+        time.tv_usec = 100000;
+
+        int ret = select(STDIN_FILENO + 1, &readfds, NULL, NULL, &time);
+
+        if (ret == -1){
+            perror("select");
+            exit(1);
+        }
+        else if (ret == 0){
+            // タイムアウト
+            continue;
+        }
+        else{
+            data[0] = getchar();
+            // printf("%c\n",data[0]);
+            switch(data[0]){
+                case 'c':
+                    connected = 1;
+                    // 送る処理
+                    int send_char_num = send(s, data, sizeof(char), 0);
+                    if(send_char_num < 0){
+                        perror("send");
+                        exit(1);
+                    }
+                    // break;
+                    pthread_exit(NULL);
+            }
+         }
+
+    }   
+
+    pthread_exit(NULL);
+}
+
 // cでclient側が通話開始
 void *getchar_opponent(void *arg){
     int s = *(int *)arg;
     char data[1];
     while (1) {
+        if(ring_finished){
+            pthread_exit(NULL);
+        }
         int n = recv(s, data, sizeof(data), 0);
         if (n == -1) {
             perror("recv");
@@ -372,9 +428,10 @@ int main(int argc, char *argv[]){
 
         // 着信音
 
-        pthread_t getchar_self_thread, ring_thread;
+        pthread_t get_call_thread;
+        pthread_t ring_thread;
 
-        if (pthread_create(&getchar_self_thread, NULL, getchar_self, &s) != 0){
+        if (pthread_create(&get_call_thread, NULL, get_call, &s) != 0){
             perror("pthread_create");
             exit(1);
         }
@@ -384,8 +441,10 @@ int main(int argc, char *argv[]){
             exit(1);
         }
 
-        pthread_join(getchar_self_thread, NULL);
+        pthread_join(get_call_thread, NULL);
         pthread_join(ring_thread, NULL);
+
+        printf("%d\n", connected);
 
         if (connected == 0){
             // recvしてそれをファイルにリダイレクト(wav)
@@ -395,7 +454,7 @@ int main(int argc, char *argv[]){
                 exit(1);
             }
 
-            pthread_join(record_voicemail_thread_thread, NULL);
+            pthread_join(record_voicemail_thread, NULL);
 
             close(s);
             printf("success");
@@ -416,14 +475,14 @@ int main(int argc, char *argv[]){
             exit(1);
         }
 
-        if (pthread_create(&getchar_self_thread, NULL, getchar_self, &s) != 0){
-            perror("pthread_create");
-            exit(1);
-        }
+        // if (pthread_create(&getchar_self_thread, NULL, getchar_self, &s) != 0){
+        //     perror("pthread_create");
+        //     exit(1);
+        // }
 
         pthread_join(send_thread, NULL);
         pthread_join(recv_thread, NULL);
-        pthread_join(getchar_self_thread, NULL);
+        // pthread_join(getchar_self_thread, NULL);
 
         close(s);
     }

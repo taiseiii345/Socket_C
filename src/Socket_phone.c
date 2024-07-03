@@ -25,6 +25,8 @@
 int connected = 0;
 // ミュートの開始
 int mute = 0;
+// 消音
+int silence = 0;
 //　ボイスチェンジャー
 int VC = 0;
 
@@ -189,23 +191,14 @@ void *recv_data(void *arg) {
             break;
         }
 
-        if(s == 1){
-            short silence_sig[DATA_SIZE];
-            memset(silence_sig, 0, DATA_SIZE);
-            int m = fwrite(s, silence_sig, sizeof(silence_sig), 0);
-            if (m == -1) {
-                perror("write");
-                exit(1);
-            }
-            continue;
+        if(silence == 1){
+            memset(data, 0, sizeof(data));
         }
 
-        else{
-            int m = fwrite(data, sizeof(short), DATA_SIZE, fp);
-            if (m == -1) {
-                perror("write");
-                exit(1);
-            }
+        int m = fwrite(data, sizeof(short), DATA_SIZE, fp);
+        if (m == -1) {
+            perror("write");
+            exit(1);
         }
     }
     pclose(fp);
@@ -254,7 +247,7 @@ void *getchar_self(void *arg){
             case 'm':
                 mute = (mute + 1) % 2;
             case 's':
-                s = (s + 1) % 2;                
+                silence = (silence + 1) % 2;                
             case 'v':
                 VC = (VC + 1) % 2;
         }

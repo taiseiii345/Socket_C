@@ -84,11 +84,11 @@ void *recv_data(void *arg) {
             break;
         }
         
-            int m = fwrite(data, sizeof(short), 1, fp);
-            if (m == -1) {
-                perror("write");
-                exit(1);
-            }
+        int m = fwrite(data, sizeof(short), 1, fp);
+        if (m == -1) {
+            perror("write");
+            exit(1);
+        }
 
     }
     pclose(fp);
@@ -282,7 +282,7 @@ int main(int argc, char *argv[]){
         } 
 
         // 並列処理
-         pthread_t send_thread, recv_thread;
+         pthread_t send_thread, recv_thread, getchar_self_thread;
 
         if (pthread_create(&send_thread, NULL, send_data, &s) != 0) {
             perror("pthread_create");
@@ -294,14 +294,14 @@ int main(int argc, char *argv[]){
             exit(1);
         }
 
-        if (pthread_create(&getchar_opponent_thread, NULL, getchar_opponent, &s) != 0){
+        if (pthread_create(&getchar_self_thread, NULL, getchar_self, &s) != 0){
             perror("pthread_create");
             exit(1);
         }
 
         pthread_join(send_thread, NULL);
         pthread_join(recv_thread, NULL);
-        pthread_join(getchar_opponent_thread, NULL);
+        pthread_join(getchar_self_thread, NULL);
 
         close(s);
     }

@@ -153,8 +153,9 @@ void *send_data(void *arg) {
             data[0] *= 2;
         }
         if(mute == 1){
-            short mute_sig[1];
-            mute_sig[0] = (short)0;
+            short mute_sig[DATA_SIZE];
+            // mute_sig[0] = (short)0;
+            memset(mute_sig, 0, DATA_SIZE);
             int m = send(s, mute_sig, sizeof(short), 0);
             if (m == -1) {
                 perror("write");

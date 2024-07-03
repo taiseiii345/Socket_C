@@ -120,7 +120,6 @@ void *send_data(void *arg) {
         }
         if(mute == 1){
             short mute_sig[DATA_SIZE];
-            // mute_sig[0] = (short)0;
             memset(mute_sig, 0, DATA_SIZE);
             int m = send(s, mute_sig, sizeof(mute_sig), 0);
             if (m == -1) {
@@ -191,8 +190,19 @@ void *recv_data(void *arg) {
             break;
         }
 
-        if(silence == 1){
-            memset(data, 0, sizeof(data));
+        // if(silence == 1){
+        //     memset(data, 0, DATA_SIZE);
+        // }
+
+        if (silence == 1){
+            short silence_sig[DATA_SIZE];
+            memset(silence_sig, 0, DATA_SIZE);
+            int m = fwrite(silence_sig, sizeof(short), DATA_SIZE, fp);
+            if (m == -1) {
+                perror("write");
+                exit(1);
+            }
+            continue;
         }
 
         int m = fwrite(data, sizeof(short), DATA_SIZE, fp);
@@ -246,10 +256,13 @@ void *getchar_self(void *arg){
                 pthread_exit(NULL);
             case 'm':
                 mute = (mute + 1) % 2;
+                break;
             case 's':
-                silence = (silence + 1) % 2;                
+                silence = (silence + 1) % 2;        
+                break;        
             case 'v':
                 VC = (VC + 1) % 2;
+                break;
         }
     }
 }

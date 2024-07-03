@@ -25,8 +25,6 @@
 int connected = 0;
 // ミュートの開始
 int mute = 0;
-// スピーカーの開始
-int speaker = 0;
 //　ボイスチェンジャー
 int VC = 0;
 
@@ -118,12 +116,6 @@ void *send_data(void *arg) {
         if(nnn == 0){
             break;
         }
-        if(speaker == 1){
-            // data[0] *= 2;
-            for(int i = 0; i < DATA_SIZE; ++i){
-                data[i] *= 5;
-            }
-        }
         if(mute == 1){
             short mute_sig[DATA_SIZE];
             // mute_sig[0] = (short)0;
@@ -196,13 +188,25 @@ void *recv_data(void *arg) {
         } else if (n == 0) {
             break;
         }
-        
-        int m = fwrite(data, sizeof(short), DATA_SIZE, fp);
-        if (m == -1) {
-            perror("write");
-            exit(1);
+
+        if(s == 1){
+            short silence_sig[DATA_SIZE];
+            memset(silence_sig, 0, DATA_SIZE);
+            int m = fwrite(s, silence_sig, sizeof(silence_sig), 0);
+            if (m == -1) {
+                perror("write");
+                exit(1);
+            }
+            continue;
         }
 
+        else{
+            int m = fwrite(data, sizeof(short), DATA_SIZE, fp);
+            if (m == -1) {
+                perror("write");
+                exit(1);
+            }
+        }
     }
     pclose(fp);
     return NULL;
@@ -250,7 +254,7 @@ void *getchar_self(void *arg){
             case 'm':
                 mute = (mute + 1) % 2;
             case 's':
-                speaker = (speaker + 1) % 2;
+                s = (s + 1) % 2;                
             case 'v':
                 VC = (VC + 1) % 2;
         }

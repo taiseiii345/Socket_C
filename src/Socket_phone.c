@@ -142,7 +142,7 @@ void *send_data(void *arg) {
             fft(X, Y, n);
 
             // FFT_SLIDEだけずらす
-            for(int i = 0; i < (int)n/2; ++i){
+            for(int i = (int)n/2 -1 - FFT_SLIDE; i >= 0; --i){
                 Y[i+FFT_SLIDE] = Y[i];
             }
             for(int i = 0; i< FFT_SLIDE; ++i){
@@ -153,6 +153,9 @@ void *send_data(void *arg) {
             ifft(Y, X, n);
             /* 標本の配列に変換 */
             complex_to_sample(X, data, n);
+
+            free(X);
+            free(Y);
         }
 
         int nn = send(s, data, sizeof(data), 0);

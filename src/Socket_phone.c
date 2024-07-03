@@ -10,8 +10,14 @@
 #include <pthread.h>
 #include <termios.h>
 #include <fcntl.h>
+#include <assert.h>
+#include <complex.h>
+#include <math.h>
+#include <string.h>
 
 #define BUFFER_SIZE 256
+#define DATA_SIZE 1024
+#define FFT_SLIDE 3
 #define max_call 3
 
 // 通話の開始
@@ -20,6 +26,107 @@ int connected = 0;
 int mute = 0;
 // スピーカーの開始
 int speaker = 0;
+
+//　ボイスチェンジャー
+int VC = 0;
+
+typedef short sample_t;
+
+void die(char * s) {
+  perror(s); 
+  exit(1);
+}
+
+/* fd から 必ず n バイト読み, bufへ書く.
+   n バイト未満でEOFに達したら, 残りは0で埋める.
+   fd から読み出されたバイト数を返す */
+ssize_t read_n(int fd, ssize_t n, void * buf) {
+  ssize_t re = 0;
+  while (re < n) {
+    ssize_t r = read(fd, buf + re, n - re);
+    if (r == -1) die("read");
+    if (r == 0) break;
+    re += r;
+  }
+  memset(buf + re, 0, n - re);
+  return re;
+}
+
+/* fdへ, bufからnバイト書く */
+ssize_t write_n(int fd, ssize_t n, void * buf) {
+  ssize_t wr = 0;
+  while (wr < n) {
+    ssize_t w = write(fd, buf + wr, n - wr);
+    if (w == -1) die("write");
+    wr += w;
+  }
+  return wr;
+}
+
+/* 標本(整数)を複素数へ変換 */
+void sample_to_complex(sample_t * s, 
+		       complex double * X, 
+		       long n) {
+  long i;
+  for (i = 0; i < n; i++) X[i] = s[i];
+}
+
+/* 複素数を標本(整数)へ変換. 虚数部分は無視 */
+void complex_to_sample(complex double * X, 
+		       sample_t * s, 
+		       long n) {
+  long i;
+  for (i = 0; i < n; i++) {
+    s[i] = creal(X[i]);
+  }
+}
+
+/* 高速(逆)フーリエ変換;
+   w は1のn乗根.
+   フーリエ変換の場合   偏角 -2 pi / n
+   逆フーリエ変換の場合 偏角  2 pi / n
+   xが入力でyが出力.
+   xも破壊される
+ */
+void fft_r(complex double * x, 
+	   complex double * y, 
+	   long n, 
+	   complex double w) {
+  if (n == 1) { y[0] = x[0]; }
+  else {
+    complex double W = 1.0; 
+    long i;
+    for (i = 0; i < n/2; i++) {
+      y[i]     =     (x[i] + x[i+n/2]); /* 偶数行 */
+      y[i+n/2] = W * (x[i] - x[i+n/2]); /* 奇数行 */
+      W *= w;
+    }
+    fft_r(y,     x,     n/2, w * w);
+    fft_r(y+n/2, x+n/2, n/2, w * w);
+    for (i = 0; i < n/2; i++) {
+      y[2*i]   = x[i];
+      y[2*i+1] = x[i+n/2];
+    }
+  }
+}
+
+void fft(complex double * x, 
+	 complex double * y, 
+	 long n) {
+  long i;
+  double arg = 2.0 * M_PI / n;
+  complex double w = cos(arg) - 1.0j * sin(arg);
+  fft_r(x, y, n, w);
+  for (i = 0; i < n; i++) y[i] /= n;
+}
+
+void ifft(complex double * y, 
+	  complex double * x, 
+	  long n) {
+  double arg = 2.0 * M_PI / n;
+  complex double w = cos(arg) + 1.0j * sin(arg);
+  fft_r(y, x, n, w);
+}
 
 void *send_data(void *arg) {
     char *cmdline = "rec -t raw -b 16 -c 1 -e s -r 44100 -";
@@ -31,9 +138,10 @@ void *send_data(void *arg) {
 
     int s = *(int *)arg;
 
-    short data[1];
+    // short data[1];
+    short data[DATA_SIZE];
     while(1){
-        int n = fread(data, sizeof(short), 1, fp);
+        int n = fread(data, sizeof(short), DATA_SIZE, fp);
         if(n == -1){
             perror("read");
             exit(1);
@@ -53,12 +161,36 @@ void *send_data(void *arg) {
                 exit(1);
             }
         }
-        else{
-            int nn = send(s, data, sizeof(data), 0);
-            if(nn < 0){
-                perror("send");
-                exit(1);
+
+        if(VC == 1){
+            long n = DATA_SIZE;
+            complex double * X = calloc(sizeof(complex double), n);
+            complex double * Y = calloc(sizeof(complex double), n);
+            while (1) {
+                /* 複素数の配列に変換 */
+                sample_to_complex(data, X, n);
+                /* FFT -> Y */
+                fft(X, Y, n);
+
+                // FFT_SLIDEだけずらす
+                for(int i = 0; i < n; ++i){
+                    Y[i+FFT_SLIDE] = Y[i];
+                }
+                for(int i = 0; i< FFT_SLIDE; ++i){
+                    Y[i] = 0;
+                }
+
+                /* IFFT -> Z */
+                ifft(Y, X, n);
+                /* 標本の配列に変換 */
+                complex_to_sample(X, data, n);
             }
+        }
+
+        int nn = send(s, data, sizeof(data), 0);
+        if(nn < 0){
+            perror("send");
+            exit(1);
         }
     }
     pclose(fp);
@@ -74,7 +206,7 @@ void *recv_data(void *arg) {
     }
 
     int s = *(int *)arg;
-    short data[1];
+    short data[DATA_SIZE];
     while (1) {
         int n = recv(s, data, sizeof(data), 0);
         if (n == -1) {
@@ -84,7 +216,7 @@ void *recv_data(void *arg) {
             break;
         }
         
-        int m = fwrite(data, sizeof(short), 1, fp);
+        int m = fwrite(data, sizeof(short), DATA_SIZE, fp);
         if (m == -1) {
             perror("write");
             exit(1);
@@ -138,6 +270,8 @@ void *getchar_self(void *arg){
                 mute = (mute + 1) % 2;
             case 's':
                 speaker = (speaker + 1) % 2;
+            case 'v':
+                VC = (VC + 1) % 2;
         }
     }
 }

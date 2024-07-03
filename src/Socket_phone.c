@@ -47,19 +47,18 @@ void *send_data(void *arg) {
         if(mute == 1){
             short mute_sig[1];
             mute_sig[0] = (short)0;
-            int m = send(s, sizeof(short), sizeof, fp);
+            int m = send(s, mute_sig, sizeof(short), 0);
             if (m == -1) {
                 perror("write");
                 exit(1);
             }
         }
-
         else{
-        int nn = send(s, data, sizeof(data), 0);
-        if(nn < 0){
-            perror("send");
-            exit(1);
-        }
+            int nn = send(s, data, sizeof(data), 0);
+            if(nn < 0){
+                perror("send");
+                exit(1);
+            }
         }
     }
     pclose(fp);

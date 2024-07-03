@@ -252,8 +252,8 @@ void *voicemail(){
     pthread_exit(NULL);
 }
 
-void *record_voicemail(){
-    char *cmdline = "sox -t raw -b 16 -c 1 -e s -r 44100 - voicemail.wav"
+void *record_voicemail(void *arg){
+    char *cmdline = "sox -t raw -b 16 -c 1 -e s -r 44100 - voicemail.wav";
     FILE *fp = popen(cmdline, "w");
     if (fp == NULL) {
         perror ("popen recv failed");
@@ -389,7 +389,18 @@ int main(int argc, char *argv[]){
 
         if (connected == 0){
             // recvしてそれをファイルにリダイレクト(wav)
-            record_voicemail(s);
+            pthread_t record_voicemail_thread;
+            if (pthread_create(&record_voicemail_thread, NULL, record_voicemail, &s) != 0) {
+                perror("pthread_create");
+                exit(1);
+            }
+
+            pthread_join(record_voicemail_thread_thread, NULL);
+
+            close(s);
+            printf("success");
+
+            return 0;
         }
 
         // 並列処理
@@ -472,6 +483,8 @@ int main(int argc, char *argv[]){
             pthread_join(send_thread, NULL);
 
             close(s);
+
+            printf("success");
 
             return 0;
         } 

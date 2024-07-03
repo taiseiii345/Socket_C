@@ -136,25 +136,23 @@ void *send_data(void *arg) {
             long n = DATA_SIZE;
             complex double * X = calloc(sizeof(complex double), n);
             complex double * Y = calloc(sizeof(complex double), n);
-            while (1) {
-                /* 複素数の配列に変換 */
-                sample_to_complex(data, X, n);
-                /* FFT -> Y */
-                fft(X, Y, n);
+            /* 複素数の配列に変換 */
+            sample_to_complex(data, X, n);
+            /* FFT -> Y */
+            fft(X, Y, n);
 
-                // FFT_SLIDEだけずらす
-                for(int i = 0; i < (int)n/2; ++i){
-                    Y[i+FFT_SLIDE] = Y[i];
-                }
-                for(int i = 0; i< FFT_SLIDE; ++i){
-                    Y[i] = 0;
-                }
-
-                /* IFFT -> Z */
-                ifft(Y, X, n);
-                /* 標本の配列に変換 */
-                complex_to_sample(X, data, n);
+            // FFT_SLIDEだけずらす
+            for(int i = 0; i < (int)n/2; ++i){
+                Y[i+FFT_SLIDE] = Y[i];
             }
+            for(int i = 0; i< FFT_SLIDE; ++i){
+                Y[i] = 0;
+            }
+
+            /* IFFT -> Z */
+            ifft(Y, X, n);
+            /* 標本の配列に変換 */
+            complex_to_sample(X, data, n);
         }
 
         int nn = send(s, data, sizeof(data), 0);

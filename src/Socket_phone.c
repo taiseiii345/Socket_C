@@ -232,6 +232,57 @@ void *ring(){
     }
 
     pthread_exit(NULL);
+}
+
+void *voicemail(){
+    FILE *fp;
+    char *cmdline = "play ../data/Ringtone/voicemail.wav";
+    if((fp = popen(cmdline, "w")) == NULL){
+        perror("popen");
+        exit(1);
+    }
+
+    char *cmdline2 = "play ../data/Ringtone/beep.wav";
+    if((fp = popen(cmdline2, "w")) == NULL){
+        perror("popen");
+        exit(1);
+    }
+
+    pclose(fp);
+    pthread_exit(NULL);
+}
+
+void *record_voicemail(){
+    char *cmdline = "sox -t raw -b 16 -c 1 -e s -r 44100 - voicemail.wav"
+    FILE *fp = popen(cmdline, "w");
+    if (fp == NULL) {
+        perror ("popen recv failed");
+        exit(EXIT_FAILURE);
+    }
+
+    int s = *(int *)arg;
+    short data[DATA_SIZE];
+    while (1) {
+        int n = recv(s, data, sizeof(data), 0);
+        if (n == -1) {
+            perror("recv");
+            exit(1);
+        } else if (n == 0) {
+            break;
+        }
+
+        // if(silence == 1){
+        //     memset(data, 0, DATA_SIZE);
+        // }
+
+        int m = fwrite(data, sizeof(short), DATA_SIZE, fp);
+        if (m == -1) {
+            perror("write");
+            exit(1);
+        }
+    }
+    pclose(fp);
+    return NULL;
 
 }
 
@@ -337,7 +388,8 @@ int main(int argc, char *argv[]){
         pthread_join(ring_thread, NULL);
 
         if (connected == 0){
-            return 0;
+            // recvしてそれをファイルにリダイレクト(wav)
+            record_voicemail(s);
         }
 
         // 並列処理
@@ -403,6 +455,24 @@ int main(int argc, char *argv[]){
         pthread_join(getchar_opponent_thread, NULL);
 
         if(connected == 0){
+            // 留守電音声流す
+            // sendで自分の声を送る
+            pthread_t voicemail_thread, send_thread;
+            if (pthread_create(&voicemail_thread, NULL, voicemail, &s) != 0) {
+                perror("pthread_create");
+                exit(1);
+            }
+
+            if (pthread_create(&send_thread, NULL, send_data, &s) != 0) {
+                perror("pthread_create");
+                exit(1);
+            }   
+
+            pthread_join(voicemail_thread, NULL);
+            pthread_join(send_thread, NULL);
+
+            close(s);
+
             return 0;
         } 
 

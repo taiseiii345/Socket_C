@@ -44,10 +44,22 @@ void *send_data(void *arg) {
         if(speaker == 1){
             data[0] *= 2;
         }
+        if(mute == 1){
+            short mute_sig[1];
+            mute_sig[0] = (short)0;
+            int m = send(s, sizeof(short), sizeof, fp);
+            if (m == -1) {
+                perror("write");
+                exit(1);
+            }
+        }
+
+        else{
         int nn = send(s, data, sizeof(data), 0);
         if(nn < 0){
             perror("send");
             exit(1);
+        }
         }
     }
     pclose(fp);
@@ -72,22 +84,13 @@ void *recv_data(void *arg) {
         } else if (n == 0) {
             break;
         }
-        if(mute == 1){
-            short garbage[1];
-            garbage[0] = 0;
-            int m = fwrite(garbage, sizeof(short), 1, fp);
-            if (m == -1) {
-                perror("write");
-                exit(1);
-            }
-        }
-        else{
+        
             int m = fwrite(data, sizeof(short), 1, fp);
             if (m == -1) {
                 perror("write");
                 exit(1);
             }
-        }
+
     }
     pclose(fp);
     return NULL;

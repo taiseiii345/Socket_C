@@ -4,7 +4,8 @@
 C言語で記述したソケット通信プログラムです．
 Soxを用いた双方向の音声通信が可能となっています．
 
-![テスト](./fig/flowchart_client.pdf)
+<img src="./fig/flowchart_client.pdf" alt="client" width="400">
+
 
 ## Requirement
 Sox

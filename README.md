@@ -17,7 +17,6 @@ Sox
 ```sh
 gcc -o Socket_phone Socket_phone.c
 ```
-でコンパイル．
 
 - サーバー側
 ```sh
@@ -32,3 +31,7 @@ gcc -o Socket_phone Socket_phone.c
 (IP_addres)および(port)にはサーバー側のIPアドレス，ポート番号を入力し、接続が開始する．
 
 ## Feature
+
+- 着信音
+- 留守電
+- ミュート・消音・ボイスチェンジ・ノイズ除去
